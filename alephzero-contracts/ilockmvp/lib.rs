@@ -39,50 +39,45 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(min_specialization)]
 
-
-
-pub use self::ilockmvp::{
-    ILOCKmvp,
-    ILOCKmvpRef,
-};
+pub use self::ilockmvp::{ILOCKmvp, ILOCKmvpRef};
 
 #[openbrush::contract]
 pub mod ilockmvp {
 
+    use ink::prelude::{
+        format,
+        string::{String, ToString},
+        vec::Vec,
+    };
+    use ink::storage::Mapping;
     use ink::{
         codegen::{EmitEvent, Env},
         reflect::ContractEventBase,
     };
-    use ink::prelude::{
-        vec::Vec,
-        format,
-        string::{String, ToString},
-    };
-    use ink::storage::Mapping;
     use openbrush::{
         contracts::{
+            ownable::*,
             psp22::{
-                extensions::{metadata::*, burnable::*},
+                extensions::{burnable::*, metadata::*},
                 Internal,
             },
-            ownable::*,
         },
         traits::Storage,
     };
 
-////////////////////////////////////////////////////////////////////////////
-//// constants /////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    //// constants /////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     /// - magic numbers
-    pub const ID_LENGTH: usize = 32;                                // 32B account id
-    pub const POOL_COUNT: usize = 12;                               // number of stakeholder pools
-    pub const ONE_MONTH: Timestamp = 2_592_000_000;                 // milliseconds in 30 days
+    pub const ID_LENGTH: usize = 32; // 32B account id
+    pub const POOL_COUNT: usize = 12; // number of stakeholder pools
+    pub const ONE_MONTH: Timestamp = 2_592_000_000; // milliseconds in 30 days
 
     /// - token data
-    pub const TOKEN_CAP: u128 = 1_000_000_000;                      // 10^9
-    pub const DECIMALS_POWER10: u128 = 1_000_000_000_000_000_000;   // 10^18
-    pub const SUPPLY_CAP: u128 = TOKEN_CAP * DECIMALS_POWER10;      // 10^27
+    pub const TOKEN_CAP: u128 = 1_000_000_000; // 10^9
+    pub const DECIMALS_POWER10: u128 = 1_000_000_000_000_000_000; // 10^18
+    pub const SUPPLY_CAP: u128 = TOKEN_CAP * DECIMALS_POWER10; // 10^27
     pub const TOKEN_NAME: &str = "Interlock Network";
     pub const TOKEN_DECIMALS: u8 = 18;
     pub const TOKEN_SYMBOL: &str = "ILOCK";
@@ -97,36 +92,96 @@ pub mod ilockmvp {
 
     /// - pool data
     pub const POOLS: [PoolData; POOL_COUNT] = [
-        PoolData { name: "early_backers+venture_capital", tokens: 20_000_000,  vests: 24, cliffs: 1, },
-        PoolData { name: "presale_1",                     tokens: 48_622_222,  vests: 18, cliffs: 1, },
-        PoolData { name: "presale_2",                     tokens: 66_666_667,  vests: 15, cliffs: 1, },
-        PoolData { name: "presale_3",                     tokens: 40_000_000,  vests: 12, cliffs: 1, },
-        PoolData { name: "team+founders",                 tokens: 200_000_000, vests: 36, cliffs: 6, },
-        PoolData { name: "outlier_ventures",              tokens: 40_000_000,  vests: 24, cliffs: 1, },
-        PoolData { name: "advisors",                      tokens: 25_000_000,  vests: 24, cliffs: 1, },
-        PoolData { name: "rewards",                       tokens: 285_000_000, vests: 1,  cliffs: 0, },
-        PoolData { name: "foundation",                    tokens: 172_711_111, vests: 84, cliffs: 1, },
-        PoolData { name: "partners",                      tokens: 37_000_000,  vests: 1,  cliffs: 0, },
-        PoolData { name: "whitelist",                     tokens: 15_000_000,  vests: 48, cliffs: 0, },
-        PoolData { name: "public_sale",                   tokens: 50_000_000,  vests: 48, cliffs: 0, },
+        PoolData {
+            name: "early_backers+venture_capital",
+            tokens: 20_000_000,
+            vests: 24,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "presale_1",
+            tokens: 48_622_222,
+            vests: 18,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "presale_2",
+            tokens: 66_666_667,
+            vests: 15,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "presale_3",
+            tokens: 40_000_000,
+            vests: 12,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "team+founders",
+            tokens: 200_000_000,
+            vests: 36,
+            cliffs: 6,
+        },
+        PoolData {
+            name: "outlier_ventures",
+            tokens: 40_000_000,
+            vests: 24,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "advisors",
+            tokens: 25_000_000,
+            vests: 24,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "rewards",
+            tokens: 285_000_000,
+            vests: 1,
+            cliffs: 0,
+        },
+        PoolData {
+            name: "foundation",
+            tokens: 172_711_111,
+            vests: 84,
+            cliffs: 1,
+        },
+        PoolData {
+            name: "partners",
+            tokens: 37_000_000,
+            vests: 1,
+            cliffs: 0,
+        },
+        PoolData {
+            name: "whitelist",
+            tokens: 15_000_000,
+            vests: 48,
+            cliffs: 0,
+        },
+        PoolData {
+            name: "public_sale",
+            tokens: 50_000_000,
+            vests: 48,
+            cliffs: 0,
+        },
     ];
 
-    pub const EARLY_BACKERS: u8     = 0;
-    pub const PRESALE_1: u8         = 1;
-    pub const PRESALE_2: u8         = 2;
-    pub const PRESALE_3: u8         = 3;
-    pub const TEAM_FOUNDERS: u8     = 4;
-    pub const OUTLIER_VENTURES: u8  = 5;
-    pub const ADVISORS: u8          = 6;
-    pub const REWARDS: u8           = 7;
-    pub const FOUNDATION: u8        = 8;
-    pub const PARTNERS: u8          = 9;
-    pub const WHITELIST: u8         = 10;
-    pub const PUBLIC_SALE: u8       = 11;
+    pub const EARLY_BACKERS: u8 = 0;
+    pub const PRESALE_1: u8 = 1;
+    pub const PRESALE_2: u8 = 2;
+    pub const PRESALE_3: u8 = 3;
+    pub const TEAM_FOUNDERS: u8 = 4;
+    pub const OUTLIER_VENTURES: u8 = 5;
+    pub const ADVISORS: u8 = 6;
+    pub const REWARDS: u8 = 7;
+    pub const FOUNDATION: u8 = 8;
+    pub const PARTNERS: u8 = 9;
+    pub const WHITELIST: u8 = 10;
+    pub const PUBLIC_SALE: u8 = 11;
 
-////////////////////////////////////////////////////////////////////////////
-//// structured data ///////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    //// structured data ///////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     /// - This is upgradable storage for the token rewarding feature of this
     /// PSP22 contract.
@@ -134,10 +189,8 @@ pub mod ilockmvp {
     #[derive(Default, Debug)]
     #[openbrush::upgradeable_storage(REWARD_KEY)]
     pub struct RewardData {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - How much ILOCK have we rewarded each Interlocker?
         interlocker: Mapping<AccountId, Balance>,
 
@@ -154,10 +207,8 @@ pub mod ilockmvp {
     #[derive(Default, Debug)]
     #[openbrush::upgradeable_storage(POOL_KEY)]
     pub struct TokenPools {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - What are the current balances of all the vesting pools?
         /// - This includes the rewards pool balance.
         balances: [Balance; POOL_COUNT],
@@ -181,10 +232,8 @@ pub mod ilockmvp {
     #[derive(Default, Debug)]
     #[openbrush::upgradeable_storage(VEST_KEY)]
     pub struct VestData {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - Contains information about stakeholders and the vesting
         /// status.
         /// - See detailed struct below.
@@ -209,20 +258,18 @@ pub mod ilockmvp {
     /// - This is primarily for managing and implementing the vesting schedule.
     #[derive(scale::Encode, scale::Decode, Clone, Default)]
     #[cfg_attr(
-    feature = "std",
-    derive(
-        Debug,
-        PartialEq,
-        Eq,
-        scale_info::TypeInfo,
-        ink::storage::traits::StorageLayout
+        feature = "std",
+        derive(
+            Debug,
+            PartialEq,
+            Eq,
+            scale_info::TypeInfo,
+            ink::storage::traits::StorageLayout
         )
     )]
     pub struct StakeholderData {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - How much so far has this stakeholder been paid in ILOCK?
         paid: Balance,
 
@@ -240,17 +287,15 @@ pub mod ilockmvp {
     #[derive(Default, Debug)]
     #[openbrush::upgradeable_storage(APP_KEY)]
     pub struct AppData {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - Contains information specifying a particular _type_ of connecting
         /// external application contract via the application/socket abstraction.
         /// - When an application contract creates a connecting socket with this token
         /// contract with a particular port, it adheres to the logic and protocol
         /// specified by the port type.
         /// - For example, PORT 0 in this contract only accepts connections from universal
-        /// access NFT contract owned by Interlock, and for every socket call from a UANFT contract 
+        /// access NFT contract owned by Interlock, and for every socket call from a UANFT contract
         /// application, tokens in the amount of the set NFT price are transferred from the calling minter
         /// to this ILOCK contract's owner account. On the application side, once the ILOCK
         /// tokens are successfully transferred via the port protocol, a UANFT is minted to
@@ -293,23 +338,21 @@ pub mod ilockmvp {
     /// connectivity formalism.
     #[derive(scale::Encode, scale::Decode, Clone)]
     #[cfg_attr(
-    feature = "std",
-    derive(
-        Debug,
-        PartialEq,
-        Eq,
-        scale_info::TypeInfo,
-        ink::storage::traits::StorageLayout
+        feature = "std",
+        derive(
+            Debug,
+            PartialEq,
+            Eq,
+            scale_info::TypeInfo,
+            ink::storage::traits::StorageLayout
         )
     )]
     pub struct Port {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - What is the codehash of the application smart contract associated with
         /// this port?
-        /// - This codehash is the application template that numerous individual application 
+        /// - This codehash is the application template that numerous individual application
         /// contracts may be instantiated and connected to this PSP22 contract via socket
         /// without signed permission from this ILOCK contract's owner.
         /// - This codehash is essential to making sure that only safe and approved application
@@ -356,7 +399,7 @@ pub mod ilockmvp {
                 locked: true,
                 paid: 0,
                 collected: 0,
-                owner: AccountId::from([1_u8;32]),
+                owner: AccountId::from([1_u8; 32]),
             }
         }
     }
@@ -364,20 +407,18 @@ pub mod ilockmvp {
     /// connectivity formalism.
     #[derive(scale::Encode, scale::Decode, Clone, Copy)]
     #[cfg_attr(
-    feature = "std",
-    derive(
-        Debug,
-        PartialEq,
-        Eq,
-        scale_info::TypeInfo,
-        ink::storage::traits::StorageLayout
+        feature = "std",
+        derive(
+            Debug,
+            PartialEq,
+            Eq,
+            scale_info::TypeInfo,
+            ink::storage::traits::StorageLayout
         )
     )]
     pub struct Socket {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - Who operates (owns usually) a specific instance of a connecting application
         /// contract?
         /// - Using the restaurant franchise metaphor again, the operator may have several
@@ -403,7 +444,7 @@ pub mod ilockmvp {
     impl Default for Socket {
         fn default() -> Socket {
             Socket {
-                operator: AccountId::from([1_u8;32]),
+                operator: AccountId::from([1_u8; 32]),
                 portnumber: 65535,
             }
         }
@@ -413,17 +454,15 @@ pub mod ilockmvp {
     #[ink(storage)]
     #[derive(Default, Storage)]
     pub struct ILOCKmvp {
-
         // ABSOLUTELY DO NOT CHANGE THE ORDER OF THESE VARIABLES
         // OR TYPES IF UPGRADING THIS CONTRACT!!!
-
         /// - Openbrush PSP22.
         #[storage_field]
         psp22: psp22::Data,
 
         /// - Openbrush ownership extension.
         #[storage_field]
-		ownable: ownable::Data,
+        ownable: ownable::Data,
 
         /// - Openbrush metadata extension.
         #[storage_field]
@@ -446,9 +485,9 @@ pub mod ilockmvp {
         app: AppData,
     }
 
-////////////////////////////////////////////////////////////////////////////
-//// events and errors /////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    //// events and errors /////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     /// - specify transfer event
     #[ink(event)]
@@ -480,10 +519,7 @@ pub mod ilockmvp {
 
     /// - Other contract error types
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
-    #[cfg_attr(
-        feature = "std",
-        derive(scale_info::TypeInfo)
-    )]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum OtherError {
         /// Returned if caller is not contract owner
         CallerNotOwner,
@@ -554,18 +590,16 @@ pub mod ilockmvp {
 
     pub type Event = <ILOCKmvp as ContractEventBase>::Type;
 
-////////////////////////////////////////////////////////////////////////////
-/////// reimplement some functions /////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    /////// reimplement some functions /////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     impl PSP22 for ILOCKmvp {
-        
         ///
         /// - override default total_supply getter
         /// - total supply reflects token in circulation
         #[ink(message)]
         fn total_supply(&self) -> Balance {
-
             // revert, testing set code hash
             self.pool.circulating
         }
@@ -575,20 +609,13 @@ pub mod ilockmvp {
         /// - Transfer from owner increases total circulating supply.
         /// - Transfer to owner decreases total circulating supply.
         #[ink(message)]
-        fn transfer(
-            &mut self,
-            to: AccountId,
-            value: Balance,
-            data: Vec<u8>,
-        ) -> PSP22Result<()> {
-
+        fn transfer(&mut self, to: AccountId, value: Balance, data: Vec<u8>) -> PSP22Result<()> {
             let from = self.env().caller();
 
             let _ = self._transfer_from_to(from, to, value, data)?;
 
             // if sender is owner, then tokens are entering circulation
             if from == self.ownable.owner {
-
                 match self.pool.circulating.checked_add(value) {
                     Some(sum) => self.pool.circulating = sum,
                     None => return Err(OtherError::Overflow.into()),
@@ -597,7 +624,6 @@ pub mod ilockmvp {
 
             // if recipient is owner, then tokens are being returned or added to rewards pool
             if to == self.ownable.owner {
-
                 match self.pool.balances[REWARDS as usize].checked_add(value) {
                     Some(sum) => self.pool.balances[REWARDS as usize] = sum,
                     None => return Err(OtherError::Overflow.into()),
@@ -621,12 +647,10 @@ pub mod ilockmvp {
             value: Balance,
             data: Vec<u8>,
         ) -> PSP22Result<()> {
-
             let _ = self._transfer_from_to(from, to, value, data)?;
 
             // if sender is owner, then tokens are entering circulation
             if from == self.ownable.owner {
-
                 match self.pool.circulating.checked_add(value) {
                     Some(sum) => self.pool.circulating = sum,
                     None => return Err(OtherError::Overflow.into()),
@@ -635,7 +659,6 @@ pub mod ilockmvp {
 
             // if recipient is owner, then tokens are being returned or added to rewards pool
             if to == self.ownable.owner {
-
                 match self.pool.balances[REWARDS as usize].checked_add(value) {
                     Some(sum) => self.pool.balances[REWARDS as usize] = sum,
                     None => return Err(OtherError::Overflow.into()),
@@ -653,35 +676,27 @@ pub mod ilockmvp {
     impl PSP22Metadata for ILOCKmvp {}
 
     impl Ownable for ILOCKmvp {
-        
         // PRIOR TO OWNER TRANSFER,
         // REMAINING OWNER NONCIRCULATING
         // BALANCE MUST BE TRANSFERRED TO NEW OWNER.
     }
 
     impl PSP22Burnable for ILOCKmvp {
-
         /// - override default burn doer
         /// - burn function to permanently remove tokens from circulation / supply
         #[ink(message)]
-		#[openbrush::modifiers(only_owner)]
-        fn burn(
-            &mut self,
-            donor: AccountId,
-            amount: Balance,
-        ) -> PSP22Result<()> {
-
+        #[openbrush::modifiers(only_owner)]
+        fn burn(&mut self, donor: AccountId, amount: Balance) -> PSP22Result<()> {
             // burn the tokens
             let _ = self._burn_from(donor, amount)?;
             self.pool.circulating -= amount;
 
             Ok(())
         }
-	}
+    }
 
     // these implementations are because open brush does not implement
     impl Internal for ILOCKmvp {
-
         fn _emit_transfer_event(
             &self,
             _from: Option<AccountId>,
@@ -698,12 +713,7 @@ pub mod ilockmvp {
             );
         }
 
-        fn _emit_approval_event(
-            &self,
-            _owner: AccountId,
-            _spender: AccountId,
-            _amount: Balance
-        ) {
+        fn _emit_approval_event(&self, _owner: AccountId, _spender: AccountId, _amount: Balance) {
             ILOCKmvp::emit_event(
                 self.env(),
                 Event::Approval(Approval {
@@ -722,12 +732,11 @@ pub mod ilockmvp {
         }
     }
 
-////////////////////////////////////////////////////////////////////////////
-/////// implement token contract ///////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    /////// implement token contract ///////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     impl ILOCKmvp {
-
         /// - function for internal _emit_event implementations
         pub fn emit_event<EE: EmitEvent<Self>>(emitter: EE, event: Event) {
             emitter.emit_event(event);
@@ -736,12 +745,10 @@ pub mod ilockmvp {
         /// - constructor to initialize contract
         /// - note: pool contracts must be created prior to construction (for args)
         #[ink(constructor)]
-        pub fn new_token(
-        ) -> Self {
-
+        pub fn new_token() -> Self {
             // create contract
             let mut contract = Self::default();
-                
+
             // define owner as caller
             let caller = contract.env().caller();
 
@@ -756,36 +763,31 @@ pub mod ilockmvp {
             contract.metadata.decimals = TOKEN_DECIMALS;
 
             // mint with openbrush:
-            contract._mint_to(caller, SUPPLY_CAP)
-                    .expect("Failed to mint the initial supply");
+            contract
+                ._mint_to(caller, SUPPLY_CAP)
+                .expect("Failed to mint the initial supply");
             contract._init_with_owner(caller);
 
             // create initial pool balances
             for pool in 0..POOL_COUNT {
-
-                contract.pool.balances[pool] =
-                                POOLS[pool].tokens * DECIMALS_POWER10;
+                contract.pool.balances[pool] = POOLS[pool].tokens * DECIMALS_POWER10;
             }
-            
+
             contract
         }
 
-////////////////////////////////////////////////////////////////////////////
-/////// timing /////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        /////// timing /////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - function to check if enough time has passed to collect next payout
         /// - this function ensures Interlock cannot rush the vesting schedule
         /// - this function must be called before the next round of token distributions
         #[ink(message)]
         #[openbrush::modifiers(only_owner)]
-        pub fn check_time(
-            &mut self,
-        ) -> PSP22Result<()> {
-
+        pub fn check_time(&mut self) -> PSP22Result<()> {
             // test to see if current time falls beyond time for next payout
             if self.env().block_timestamp() > self.vest.nextpayout {
-
                 // update time variables
                 self.vest.nextpayout += ONE_MONTH;
                 self.vest.monthspassed += 1;
@@ -794,17 +796,18 @@ pub mod ilockmvp {
             }
 
             // too early, do nothing
-            return Err(OtherError::PayoutTooEarly.into())
+            return Err(OtherError::PayoutTooEarly.into());
         }
-        
+
         /// - time in seconds until next payout in minutes
         #[ink(message)]
-        pub fn remaining_time(
-            &self
-        ) -> Timestamp {
-
+        pub fn remaining_time(&self) -> Timestamp {
             // calculate remaining time
-            let timeleft: Timestamp = match self.vest.nextpayout.checked_sub(self.env().block_timestamp()) {
+            let timeleft: Timestamp = match self
+                .vest
+                .nextpayout
+                .checked_sub(self.env().block_timestamp())
+            {
                 Some(difference) => difference,
                 None => return 0,
             };
@@ -812,9 +815,9 @@ pub mod ilockmvp {
             timeleft
         }
 
-////////////////////////////////////////////////////////////////////////////
-/////// stakeholders  //////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        /////// stakeholders  //////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - function that registers a stakeholder's wallet and vesting info
         /// - used to calculate monthly payouts and track net paid
@@ -827,7 +830,6 @@ pub mod ilockmvp {
             share: Balance,
             pool: u8,
         ) -> PSP22Result<()> {
-
             // make sure share is > 0
             if share == 0 {
                 return Err(OtherError::ShareTooSmall.into());
@@ -850,11 +852,7 @@ pub mod ilockmvp {
         /// - this will allow stakeholders to verify their stake from explorer if so motivated
         /// - returns tuple (paidout, payremaining, payamount, poolnumber)
         #[ink(message)]
-        pub fn stakeholder_data(
-            &self,
-            stakeholder: AccountId,
-        ) -> (String, String, String, String) {
-
+        pub fn stakeholder_data(&self, stakeholder: AccountId) -> (String, String, String, String) {
             // get pool and stakeholder data structs first
             let this_stakeholder = self.vest.stakeholder.get(stakeholder).unwrap();
             let pool = &POOLS[this_stakeholder.pool as usize];
@@ -873,38 +871,34 @@ pub mod ilockmvp {
                 format!("payremaining: {:?} ", payremaining),
                 format!("payamount: {:?} ", payamount),
                 format!("pool: {:?}", POOLS[this_stakeholder.pool as usize].name),
-            )
+            );
         }
 
-////////////////////////////////////////////////////////////////////////////
-/////// token distribution /////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        /////// token distribution /////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - general function to transfer the token share a stakeholder is currently entitled to
         /// - this is called once per stakeholder by Interlock, Interlock paying fees
         /// - pools are guaranteed to have enough tokens for all stakeholders
         #[ink(message)]
         #[openbrush::modifiers(only_owner)]
-        pub fn distribute_tokens(
-            &mut self,
-            stakeholder: AccountId,
-        ) -> PSP22Result<()> {
-
+        pub fn distribute_tokens(&mut self, stakeholder: AccountId) -> PSP22Result<()> {
             // get data structs
             let mut this_stakeholder = match self.vest.stakeholder.get(stakeholder) {
                 Some(s) => s,
-                None => { return Err(OtherError::StakeholderNotFound.into()) },
+                None => return Err(OtherError::StakeholderNotFound.into()),
             };
             let pool = &POOLS[this_stakeholder.pool as usize];
 
             // require cliff to have been surpassed
             if self.vest.monthspassed < pool.cliffs as u16 {
-                return Err(OtherError::CliffNotPassed.into())
+                return Err(OtherError::CliffNotPassed.into());
             }
 
             // require share has not been completely paid out
             if this_stakeholder.paid == this_stakeholder.share {
-                return Err(OtherError::StakeholderSharePaid.into())
+                return Err(OtherError::StakeholderSharePaid.into());
             }
 
             // calculate the payout owed
@@ -915,7 +909,7 @@ pub mod ilockmvp {
             // ! no checked_div needed; this_stakeholder.share guaranteed to be nonzero
             let payments = this_stakeholder.paid / payout;
             if payments >= self.vest.monthspassed as u128 {
-                return Err(OtherError::PayoutTooEarly.into())
+                return Err(OtherError::PayoutTooEarly.into());
             }
 
             // calculate the new total paid to stakeholder
@@ -934,7 +928,6 @@ pub mod ilockmvp {
             // (this is to compensate for floor division that calculates payamount)
             // ! no checked_div needed; pool.vests guaranteed to be nonzero
             if remainingshare < this_stakeholder.share / pool.vests as Balance {
-
                 // add remainder
                 match payout.checked_add(this_stakeholder.share % pool.vests as Balance) {
                     Some(sum) => payout = sum,
@@ -971,12 +964,11 @@ pub mod ilockmvp {
             amount: Balance,
             pool: String,
         ) -> PSP22Result<()> {
-
             let poolnumber: u8 = match pool.as_str() {
-                "PARTNERS"      => 9,
-                "WHITELIST"     => 10,
-                "PUBLIC_SALE"   => 11,
-                _ => return Err(OtherError::InvalidPool.into())
+                "PARTNERS" => 9,
+                "WHITELIST" => 10,
+                "PUBLIC_SALE" => 11,
+                _ => return Err(OtherError::InvalidPool.into()),
             };
 
             // deduct payout amount
@@ -991,9 +983,9 @@ pub mod ilockmvp {
             Ok(())
         }
 
-////////////////////////////////////////////////////////////////////////////
-/////// pool data //////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        /////// pool data //////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - function that returns pool data
         /// - this will allow observers to verify vesting parameters for each pool (esp. theirs)
@@ -1001,11 +993,7 @@ pub mod ilockmvp {
         /// - pool numbers range from 0-11
         /// - returns (name, tokens, vests, cliff)
         #[ink(message)]
-        pub fn pool_data(
-            &self,
-            poolnumber: u8,
-        ) -> (String, String, String, String) {
-        
+        pub fn pool_data(&self, poolnumber: u8) -> (String, String, String, String) {
             let pool = &POOLS[poolnumber as usize];
 
             return (
@@ -1013,25 +1001,25 @@ pub mod ilockmvp {
                 format!("tokens alotted: {:?} ", pool.tokens),
                 format!("number of vests: {:?} ", pool.vests),
                 format!("vesting cliff: {:?} ", pool.cliffs),
-            )
+            );
         }
-        
+
         /// - get current balance of whitelist pool
         #[ink(message)]
-        pub fn pool_balance(
-            &self,
-            pool: u8,
-        ) -> (String, Balance) {
-
-            (format!("pool: {:?}, balance: {:?}", 
+        pub fn pool_balance(&self, pool: u8) -> (String, Balance) {
+            (
+                format!(
+                    "pool: {:?}, balance: {:?}",
                     POOLS[pool as usize].name.to_string(),
-                    self.pool.balances[pool as usize]),
-             self.pool.balances[pool as usize])
+                    self.pool.balances[pool as usize]
+                ),
+                self.pool.balances[pool as usize],
+            )
         }
 
-////////////////////////////////////////////////////////////////////////////
-//// rewarding  ////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        //// rewarding  ////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - reward the interlocker for browsing
         /// - this is a manual rewarding function, to override the socket formalism
@@ -1040,12 +1028,11 @@ pub mod ilockmvp {
         pub fn reward_interlocker(
             &mut self,
             reward: Balance,
-            interlocker: AccountId
+            interlocker: AccountId,
         ) -> PSP22Result<Balance> {
-
             // make sure reward not too large
             if self.pool.balances[REWARDS as usize] < reward {
-                return Err(OtherError::PaymentTooLarge.into())
+                return Err(OtherError::PaymentTooLarge.into());
             }
 
             // update total amount rewarded to interlocker
@@ -1074,7 +1061,9 @@ pub mod ilockmvp {
                 Some(sum) => sum,
                 None => return Err(OtherError::PaymentTooLarge.into()),
             };
-            self.reward.interlocker.insert(interlocker, &newrewardedtotal);
+            self.reward
+                .interlocker
+                .insert(interlocker, &newrewardedtotal);
 
             // emit Reward event
             self.env().emit_event(Reward {
@@ -1088,11 +1077,7 @@ pub mod ilockmvp {
 
         /// - get amount rewarded to interlocker to date
         #[ink(message)]
-        pub fn rewarded_interlocker_total(
-            &self,
-            interlocker: AccountId
-        ) -> Balance {
-
+        pub fn rewarded_interlocker_total(&self, interlocker: AccountId) -> Balance {
             match self.reward.interlocker.get(interlocker) {
                 Some(total) => total,
                 None => 0,
@@ -1101,33 +1086,25 @@ pub mod ilockmvp {
 
         /// - get total amount rewarded to date
         #[ink(message)]
-        pub fn rewarded_total(
-            &self
-        ) -> Balance {
-
+        pub fn rewarded_total(&self) -> Balance {
             self.reward.total
         }
 
-////////////////////////////////////////////////////////////////////////////
-//// misc  /////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-        
+        ////////////////////////////////////////////////////////////////////////////
+        //// misc  /////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+
         /// - get current balance of whitelist pool
         #[openbrush::modifiers(only_owner)]
         #[ink(message)]
-        pub fn withdraw_proceeds(
-            &mut self,
-            wallet: AccountId,
-            amount: Balance
-        ) -> PSP22Result<()> {
-
+        pub fn withdraw_proceeds(&mut self, wallet: AccountId, amount: Balance) -> PSP22Result<()> {
             // only withdraw what is available in pool
             if amount > self.pool.proceeds {
                 return Err(OtherError::PaymentTooLarge.into());
             }
 
             let _ = self.transfer(wallet, amount, Default::default())?;
-            
+
             // deduct withdraw amount
             match self.pool.proceeds.checked_sub(amount) {
                 Some(difference) => self.pool.proceeds = difference,
@@ -1139,61 +1116,45 @@ pub mod ilockmvp {
 
         /// - display taxpool balance
         #[ink(message)]
-        pub fn proceeds_available(
-            &self,
-        ) -> Balance {
-
+        pub fn proceeds_available(&self) -> Balance {
             self.pool.proceeds
         }
 
         /// - function to get the number of months passed for contract
         #[ink(message)]
-        pub fn months_passed(
-            &self,
-        ) -> u16 {
-
+        pub fn months_passed(&self) -> u16 {
             self.vest.monthspassed
         }
 
         /// - function to get the supply cap minted on TGE
         #[ink(message)]
-        pub fn cap(
-            &self,
-        ) -> Balance {
-
+        pub fn cap(&self) -> Balance {
             SUPPLY_CAP
         }
 
         /// - function to increment monthspassed for testing
-        /// 
+        ///
         ///
         ///     MUST BE DELETED PRIOR TO AUDIT
         ///
         ///
         #[ink(message)]
         #[openbrush::modifiers(only_owner)]
-        pub fn TESTING_increment_month(
-            &mut self,
-        ) -> OtherResult<bool> {
-
+        pub fn TESTING_increment_month(&mut self) -> OtherResult<bool> {
             self.vest.monthspassed += 1;
 
             Ok(true)
         }
 
-////////////////////////////////////////////////////////////////////////////
-//// portability and extensibility  ////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        //// portability and extensibility  ////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - modifies the code which is used to execute calls to this contract address
         /// - this upgrades the token contract logic while using old state
         #[ink(message)]
         #[openbrush::modifiers(only_owner)]
-        pub fn update_contract(
-            &mut self,
-            code_hash: [u8; 32]
-        ) -> PSP22Result<()> {
-
+        pub fn update_contract(&mut self, code_hash: [u8; 32]) -> PSP22Result<()> {
             // takes code hash of updates contract and modifies preexisting logic to match
             ink::env::set_code_hash(&code_hash).unwrap_or_else(|err| {
                 panic!(
@@ -1219,10 +1180,9 @@ pub mod ilockmvp {
             number: u16,
             owner: AccountId,
         ) -> PSP22Result<()> {
-
             let port = Port {
-                application: codehash,     // <--! a port defines an external staking/reward contract plus any
-                tax: tax,                  //      custom logic preceding the tax_and_reward() function
+                application: codehash, // <--! a port defines an external staking/reward contract plus any
+                tax: tax,              //      custom logic preceding the tax_and_reward() function
                 cap: cap,
                 locked: locked,
                 paid: 0,
@@ -1237,12 +1197,7 @@ pub mod ilockmvp {
         /// - rewards/staking contracts register with token contract here
         /// - contract must first register with token contract to allow reward transfers
         #[ink(message)]
-        pub fn create_socket(
-            &mut self,
-            operator: AccountId,
-            portnumber: u16,
-        ) -> OtherResult<()> {
-
+        pub fn create_socket(&mut self, operator: AccountId, portnumber: u16) -> OtherResult<()> {
             // get application address
             let application: AccountId = self.env().caller();
 
@@ -1271,50 +1226,48 @@ pub mod ilockmvp {
             if port.locked && (self.ownable.owner != operator) {
                 return Err(OtherError::PortLocked);
             }
-            
+
             // compare calling contract hash to registered port hash
             // to make sure it is safe (ie, approved and audited by interlock)
             if callinghash == port.application {
-                
                 // if the same, contract is allowed to create socket (socket == operatoraddress:portnumber)
-                let socket = Socket { operator: operator, portnumber: portnumber };
+                let socket = Socket {
+                    operator: operator,
+                    portnumber: portnumber,
+                };
 
                 // socket is registered with token contract thus the calling
                 // contract that created the socket may start calling socket to receive rewards
                 self.app.sockets.insert(application, &socket);
-            
+
                 // setup socket according to port type
                 match portnumber {
-
                     // Interlock-owned UANFTs
-                    0 => { /* do nothing */ },
+                    0 => { /* do nothing */ }
 
                     // non-Interlock-owned UANFTs
-                    1 => { /* do nothing */ },
+                    1 => { /* do nothing */ }
 
                     // Interlock gray area staking applications
                     2 => {
-
                         // give socket allowance up to port cap
                         //   . connecting contracts will not be able to reward
                         //     more than cap specified by interlock (this may be a stipend, for example)
                         //   . rewards fail to transfer if the amount paid plus the reward exceeds cap
-                        self.psp22.allowances.insert(
-                            &(&self.ownable.owner, &application),
-                            &port.cap
-                        );
+                        self.psp22
+                            .allowances
+                            .insert(&(&self.ownable.owner, &application), &port.cap);
 
                         self._emit_approval_event(self.ownable.owner, application, port.cap);
-                    },
+                    }
                     _ => return Err(OtherError::InvalidPort),
-
                 };
 
-                return Ok(()) 
+                return Ok(());
             }
 
             // returns error if calling staking application contract is not a known
-            // safe contract registered by interlock as a 'port' 
+            // safe contract registered by interlock as a 'port'
             Err(OtherError::UnsafeContract)
         }
 
@@ -1326,7 +1279,6 @@ pub mod ilockmvp {
             amount: Balance,
             _data: Vec<u8>,
         ) -> OtherResult<()> {
-
             // make sure address is not contract; we do not want to reward contracts
             if self.env().is_contract(&address) {
                 return Err(OtherError::CannotRewardContract);
@@ -1346,16 +1298,14 @@ pub mod ilockmvp {
 
             // apply custom logic for given port
             match socket.portnumber {
-
                 // NOTE: injecting custom logic into port requires Interlock Token
                 //       contract codehash update after internal port contract audit
-                
+
                 // PORT 0 == Interlock-owned UANFTs
                 //
                 // This socket call is a UANFT self-mint operation with ILOCK proceeds returning to
                 // rewards pool
-                0 => { 
-
+                0 => {
                     // deduct cost of uanft from minter's account
                     let mut minterbalance: Balance = self.psp22.balance_of(address);
                     match minterbalance.checked_sub(amount) {
@@ -1363,7 +1313,7 @@ pub mod ilockmvp {
                         None => return Err(OtherError::Underflow),
                     };
                     self.psp22.balances.insert(&address, &minterbalance);
-                
+
                     // update pools
                     match self.pool.balances[REWARDS as usize].checked_add(amount) {
                         Some(sum) => self.pool.balances[REWARDS as usize] = sum,
@@ -1380,14 +1330,13 @@ pub mod ilockmvp {
                         None => return Err(OtherError::Overflow),
                     };
                     self.app.ports.insert(socket.portnumber, &port);
-                },
+                }
 
                 // PORT 1 == Non-Interlock-owned UANFTs
                 //
                 // This socket call is for a UANFT self-mint operation that is taxed by Interlock
                 // but mint ILOCK proceeds go to socket operator instead of Interlock
                 1 => {
-
                     // deduct cost of uanft from minter's account
                     let mut minterbalance: Balance = self.psp22.balance_of(address);
                     match minterbalance.checked_sub(amount) {
@@ -1404,21 +1353,22 @@ pub mod ilockmvp {
                         Some(sum) => operatorbalance = sum,
                         None => return Err(OtherError::Overflow),
                     };
-                    self.psp22.balances.insert(&socket.operator, &operatorbalance);
-                    
+                    self.psp22
+                        .balances
+                        .insert(&socket.operator, &operatorbalance);
+
                     // emit Transfer event, uanft transfer
                     self.env().emit_event(Transfer {
                         from: Some(address),
                         to: Some(socket.operator),
                         amount: adjustedamount,
                     });
-
-                },
+                }
 
                 // PORT 2 == reserved for Interlock gray-area staking applications
                 //
                 // reserved Interlock ports
-                2 => { /* gray area staking rewards logic here */ },
+                2 => { /* gray area staking rewards logic here */ }
 
                 // .
                 // .
@@ -1430,7 +1380,7 @@ pub mod ilockmvp {
 
                     // < inject custom logic here BEFORE tax_and_reward >
                     // <    (ie, do stuff with port and socket data)    >
-                },
+                }
 
                 _ => return Err(OtherError::InvalidPort),
             };
@@ -1445,7 +1395,6 @@ pub mod ilockmvp {
             mut port: Port,
             amount: Balance,
         ) -> OtherResult<Balance> {
-
             // compute tax - tax number is in centipercent, 0.01% ==> 100% = 1 & 0.01% = 10_000
             //
             // a tax of 0.01% is amount/10_000
@@ -1470,7 +1419,7 @@ pub mod ilockmvp {
 
             // update port
             self.app.ports.insert(socket.portnumber, &port);
-                    
+
             // emit Transfer event, operator to ILOCK proceeds pool
             self.env().emit_event(Transfer {
                 from: Some(socket.operator),
@@ -1484,11 +1433,7 @@ pub mod ilockmvp {
 
         /// - get socket info
         #[ink(message)]
-        pub fn socket(
-            &self,
-            application: AccountId,
-        ) -> Socket {
-            
+        pub fn socket(&self, application: AccountId) -> Socket {
             match self.app.sockets.get(application) {
                 Some(socket) => socket,
                 None => Default::default(),
@@ -1497,30 +1442,20 @@ pub mod ilockmvp {
 
         /// - get port info
         #[ink(message)]
-        pub fn port(
-            &self,
-            portnumber: u16,
-        ) -> Port {
-            
+        pub fn port(&self, portnumber: u16) -> Port {
             match self.app.ports.get(portnumber) {
                 Some(port) => port,
                 None => Default::default(),
             }
-        }        
-    
+        }
 
-////////////////////////////////////////////////////////////////////////////
-//// tests /////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        //// tests /////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         /// - Test Events.
         #[ink(message)]
-        pub fn test_events(
-            &self,
-            alice: AccountId,
-            bob: AccountId,
-        ) -> () {
-
+        pub fn test_events(&self, alice: AccountId, bob: AccountId) -> () {
             // emit Transfer event
             Self::env().emit_event(Transfer {
                 from: Some(alice),
@@ -1541,95 +1476,92 @@ pub mod ilockmvp {
         }
     } // END OF ILOCKmvp IMPL BLOCK
 
-//
-// TESTING INCOMPLETE
-//
-// . To view debug prints and assertion failures run test via:
-//
-//      cargo +nightly test --features e2e-tests -- --show-output
-//
-// . To view debug for specific method run test via:
-//
-//      cargo nightly+ test <test_function_here> -- --nocapture
-//
-// . To run end-to-end tests, first make sure you have the substrate
-//   dev node capabilities installed via:
-//
-//      cargo install contracts-node --git https://github.com/paritytech/substrate-contracts-node.git
-//
-//   Then run the node:
-//
-//      substrate-contracts-node
-//
+    //
+    // TESTING INCOMPLETE
+    //
+    // . To view debug prints and assertion failures run test via:
+    //
+    //      cargo +nightly test --features e2e-tests -- --show-output
+    //
+    // . To view debug for specific method run test via:
+    //
+    //      cargo nightly+ test <test_function_here> -- --nocapture
+    //
+    // . To run end-to-end tests, first make sure you have the substrate
+    //   dev node capabilities installed via:
+    //
+    //      cargo install contracts-node --git https://github.com/paritytech/substrate-contracts-node.git
+    //
+    //   Then run the node:
+    //
+    //      substrate-contracts-node
+    //
 
+    // TESTTODO
+    // in order of appearance
+    //
+    // [x] happyunit_total_supply     <-- checked within new_token()
+    // [x] happye2e_transfer            \
+    // [] sade2e_transfer             |
+    // [] happye2e_transfer_from        |---- we test these because we change the default openbrush
+    // [] sade2e_transfer_from        |     implementations ... per agreement with Kudelski, we will
+    // [] happye2e_burn                 |     be assuming that openbrush is safe ... we may wish to perform
+    // [] sade2e_burn                 /     additional tests once audit is underway or/ in general future
+    // [x] happyunit_new_token (no sad, returns only Self)
+    // [] happyunit_check_time
+    // [] sadunit_check_time
+    // [] happyunit_remaining_time
+    // [x] happyunit_register_stakeholder
+    // [] sadunit_register_stakeholder . ..... add sad case where share is greater than pool total?
+    // [] happyunit_stakeholder_data
+    // [] happye2e_distribute_tokens  <-- this is to check that the vesting schedule works...
+    // [] happye2e_payout_tokens                 ...month passage is artificial here, without
+    // [] sade2e_payout_tokens                    advancing blocks.
+    // [x] happyunit_pool_data
+    // [] happyunit_pool_balances
+    // [] happye2e_reward_interlocker
+    // [] happyunit_rewarded_interlocker_total  <-- checked within reward_interlocker()
+    // [] happyunit_rewarded_total              <-- checked within reward_interlocker()
+    // [] happye2e_withdraw_proceeds
+    // [] sadunit_withdraw_proceeds
+    // [] happyunit_proceeds_available      <-- checked within withdraw_proceeds()
+    // [x] happyunit_months_passed   <-- checked within new_token()
+    // [x] happyunit_cap             <-- checked within new_token()
+    // [] happyunit_update_contract
+    // [] sadunit_update_contract
+    // [] happyunit_create_port
+    //      [] happyunit_port        <-- checked within create_port()
+    // [] ** happye2e_create_socket     \
+    // [] ** sade2e_create_socket     |---- these must be performed from generic port
+    // [] ** happye2e_call_socket       |     or from the uanft contract's self minting message
+    // [] ** sade2e_call_socket       /
+    // [] happyunit_socket
+    // [] happyunit_tax_port_transfer
+    // [] sadunit_tax_port_transfer
+    //
 
-// TESTTODO
-// in order of appearance
-//
-// [x] happyunit_total_supply     <-- checked within new_token()
-// [x] happye2e_transfer            \
-// [] sade2e_transfer             |
-// [] happye2e_transfer_from        |---- we test these because we change the default openbrush
-// [] sade2e_transfer_from        |     implementations ... per agreement with Kudelski, we will
-// [] happye2e_burn                 |     be assuming that openbrush is safe ... we may wish to perform
-// [] sade2e_burn                 /     additional tests once audit is underway or/ in general future
-// [x] happyunit_new_token (no sad, returns only Self)
-// [] happyunit_check_time
-// [] sadunit_check_time
-// [] happyunit_remaining_time
-// [x] happyunit_register_stakeholder
-// [] sadunit_register_stakeholder . ..... add sad case where share is greater than pool total?
-// [] happyunit_stakeholder_data
-// [] happye2e_distribute_tokens  <-- this is to check that the vesting schedule works...
-// [] happye2e_payout_tokens                 ...month passage is artificial here, without 
-// [] sade2e_payout_tokens                    advancing blocks.
-// [x] happyunit_pool_data
-// [] happyunit_pool_balances
-// [] happye2e_reward_interlocker           
-// [] happyunit_rewarded_interlocker_total  <-- checked within reward_interlocker()
-// [] happyunit_rewarded_total              <-- checked within reward_interlocker() 
-// [] happye2e_withdraw_proceeds
-// [] sadunit_withdraw_proceeds
-// [] happyunit_proceeds_available      <-- checked within withdraw_proceeds()
-// [x] happyunit_months_passed   <-- checked within new_token()
-// [x] happyunit_cap             <-- checked within new_token()
-// [] happyunit_update_contract
-// [] sadunit_update_contract
-// [] happyunit_create_port
-//      [] happyunit_port        <-- checked within create_port()
-// [] ** happye2e_create_socket     \
-// [] ** sade2e_create_socket     |---- these must be performed from generic port
-// [] ** happye2e_call_socket       |     or from the uanft contract's self minting message
-// [] ** sade2e_call_socket       /
-// [] happyunit_socket    
-// [] happyunit_tax_port_transfer
-// [] sadunit_tax_port_transfer
-//
+    // * note ... unit and end to end tests must reside in separate modules
+    //
+    // * note ... PSP22 token standart errors as implemented by openbrush:
+    //
+    //    /// Returned if not enough balance to fulfill a request is available.
+    //    InsufficientBalance,
+    //    /// Returned if not enough allowance to fulfill a request is available.
+    //    InsufficientAllowance,
+    //    /// Returned if recipient's address is zero.
+    //    ZeroRecipientAddress,
+    //    /// Returned if sender's address is zero.
+    //    ZeroSenderAddress,
 
-// * note ... unit and end to end tests must reside in separate modules
-//
-// * note ... PSP22 token standart errors as implemented by openbrush:
-//
-//    /// Returned if not enough balance to fulfill a request is available.
-//    InsufficientBalance,
-//    /// Returned if not enough allowance to fulfill a request is available.
-//    InsufficientAllowance,
-//    /// Returned if recipient's address is zero.
-//    ZeroRecipientAddress,
-//    /// Returned if sender's address is zero.
-//    ZeroSenderAddress,
+    ////////////////////////////////////////////////////////////////////////////
+    //// end to end ////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////
-//// end to end ////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-    
     #[cfg(all(test, feature = "e2e-tests"))]
     mod e2e_tests {
 
         use super::*;
-        use ink_e2e::{
-            build_message,
-        };
+        use ink_e2e::build_message;
         use openbrush::contracts::psp22::psp22_external::PSP22;
 
         type E2EResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -1640,10 +1572,7 @@ pub mod ilockmvp {
         /// - When transfer to contract owner, circulating supply decreases
         /// and rewards pool increases/
         #[ink_e2e::test]
-        async fn happye2e_transfer(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn happye2e_transfer(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             let alice_account = ink_e2e::account_id(ink_e2e::AccountKeyring::Alice);
             let bob_account = ink_e2e::account_id(ink_e2e::AccountKeyring::Bob);
 
@@ -1658,24 +1587,44 @@ pub mod ilockmvp {
             // transfers 1000 ILOCK from alice to bob and check for resulting Transfer event
             let alice_transfer_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
                 .call(|contract| contract.transfer(bob_account.clone(), 1000, Vec::new()));
-            match client
+
+            let transfer_response = client
                 .call(&ink_e2e::alice(), alice_transfer_msg, 0, None)
-                .await {
-                Ok(result) => {
-                    let mut transfer_present: bool = false;
-                    for event in result.events.iter() {
-                        let bytes_text: String = String::from_utf8_lossy(
-                                                 event.expect("bad event").bytes()).to_string();
-                        if bytes_text.contains("ILOCKmvp::Transfer") {
-                            transfer_present = true;
-                            break;
-                        };
-                    }
-                    if !transfer_present {panic!("Transfer event not present")};
-                },
-                Err(error) => panic!("transfer calling error: {:?}", error),
-            };
-            
+                .await
+                .unwrap();
+
+            // Filter the events
+            let contract_emitted_event = transfer_response
+                .events
+                .iter()
+                .find(|event| {
+                    event
+                        .as_ref()
+                        .expect("Expect Event")
+                        .event_metadata()
+                        .event()
+                        == "ContractEmitted"
+                })
+                .expect("Expect ContractEmitted event")
+                .unwrap();
+
+            // Decode to the expected event type (skip field_context)
+            let event = contract_emitted_event.field_bytes();
+            let decoded_event =
+                <Transfer as scale::Decode>::decode(&mut &event[35..]).expect("invalid data");
+
+            // Destructor decoded event
+            let Transfer { from, to, amount } = decoded_event;
+
+            // Assert with the expected value
+            assert_eq!(
+                from,
+                Some(alice_account),
+                "encountered invalid Transfer.from"
+            );
+            assert_eq!(to, Some(bob_account), "encountered invalid Transfer.to");
+            assert_eq!(amount, 1000, "encountered invalid Transfer.amount");
+
             // checks that bob has expected resulting balance
             let bob_balance_of_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
                 .call(|contract| contract.balance_of(bob_account.clone()));
@@ -1709,7 +1658,7 @@ pub mod ilockmvp {
             let _result = client
                 .call(&ink_e2e::bob(), bob_transfer_msg, 0, None)
                 .await;
-               
+
             // checks that circulating supply decreased appropriately
             total_supply = client
                 .call_dry_run(&ink_e2e::alice(), &total_supply_msg, 0, None)
@@ -1724,7 +1673,10 @@ pub mod ilockmvp {
                 .call_dry_run(&ink_e2e::alice(), &rewards_balance_msg, 0, None)
                 .await
                 .return_value();
-            assert_eq!(POOLS[REWARDS as usize].tokens * DECIMALS_POWER10 + 500, rewards_balance.1);
+            assert_eq!(
+                POOLS[REWARDS as usize].tokens * DECIMALS_POWER10 + 500,
+                rewards_balance.1
+            );
 
             Ok(())
         }
@@ -1738,10 +1690,7 @@ pub mod ilockmvp {
         ///     ZeroSenderAddress       - When caller's address is AccountId::from([0_u8; 32])
         ///                               (zero address has known private key..however that works)
         #[ink_e2e::test]
-        async fn sade2e_transfer(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_transfer(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -1752,10 +1701,7 @@ pub mod ilockmvp {
         /// - When caller transfers, their allowace with from decreases
         ///   and rewards pool increases
         #[ink_e2e::test]
-        async fn happye2e_transfer_from(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn happye2e_transfer_from(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             let alice_account = ink_e2e::account_id(ink_e2e::AccountKeyring::Alice);
             let bob_account = ink_e2e::account_id(ink_e2e::AccountKeyring::Bob);
 
@@ -1770,24 +1716,44 @@ pub mod ilockmvp {
             // transfers 1000 ILOCK from alice to bob and check for resulting Transfer event
             let alice_transfer_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
                 .call(|contract| contract.transfer(bob_account.clone(), 1000, Vec::new()));
-            match client
+
+            let transfer_response = client
                 .call(&ink_e2e::alice(), alice_transfer_msg, 0, None)
-                .await {
-                Ok(result) => {
-                    let mut transfer_present: bool = false;
-                    for event in result.events.iter() {
-                        let bytes_text: String = String::from_utf8_lossy(
-                                                 event.expect("bad event").bytes()).to_string();
-                        if bytes_text.contains("ILOCKmvp::Transfer") {
-                            transfer_present = true;
-                            break;
-                        };
-                    }
-                    if !transfer_present {panic!("Transfer event not present")};
-                },
-                Err(error) => panic!("transfer calling error: {:?}", error),
-            };
-            
+                .await
+                .unwrap();
+
+            // Filter the events
+            let contract_emitted_event = transfer_response
+                .events
+                .iter()
+                .find(|event| {
+                    event
+                        .as_ref()
+                        .expect("Expect Event")
+                        .event_metadata()
+                        .event()
+                        == "ContractEmitted"
+                })
+                .expect("Expect ContractEmitted event")
+                .unwrap();
+
+            // Decode to the expected event type (skip field_context)
+            let event = contract_emitted_event.field_bytes();
+            let decoded_event =
+                <Transfer as scale::Decode>::decode(&mut &event[35..]).expect("invalid data");
+
+            // Destructor decoded event
+            let Transfer { from, to, amount } = decoded_event;
+
+            // Assert with the expected value
+            assert_eq!(
+                from,
+                Some(alice_account),
+                "encountered invalid Transfer.from"
+            );
+            assert_eq!(to, Some(bob_account), "encountered invalid Transfer.to");
+            assert_eq!(amount, 1000, "encountered invalid Transfer.amount");
+
             // checks that bob has expected resulting balance
             let bob_balance_of_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
                 .call(|contract| contract.balance_of(bob_account.clone()));
@@ -1821,7 +1787,7 @@ pub mod ilockmvp {
             let _result = client
                 .call(&ink_e2e::bob(), bob_transfer_msg, 0, None)
                 .await;
-               
+
             // checks that circulating supply decreased appropriately
             total_supply = client
                 .call_dry_run(&ink_e2e::alice(), &total_supply_msg, 0, None)
@@ -1836,7 +1802,10 @@ pub mod ilockmvp {
                 .call_dry_run(&ink_e2e::alice(), &rewards_balance_msg, 0, None)
                 .await
                 .return_value();
-            assert_eq!(POOLS[REWARDS as usize].tokens * DECIMALS_POWER10 + 500, rewards_balance.1);
+            assert_eq!(
+                POOLS[REWARDS as usize].tokens * DECIMALS_POWER10 + 500,
+                rewards_balance.1
+            );
 
             Ok(())
         }
@@ -1850,10 +1819,7 @@ pub mod ilockmvp {
         ///     ZeroRecipientAddress    - when to's address is AccountId::from([0_u8; 32])
         ///     ZeroSenderAddress       - When from's address is AccountId::from([0_u8; 32])
         #[ink_e2e::test]
-        async fn sade2e_transfer_from(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_transfer_from(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -1862,10 +1828,7 @@ pub mod ilockmvp {
         /// - When burn occurs, donor balance decreases.
         /// - When burn occurs, circulating supply (total_supply()) decreases
         #[ink_e2e::test]
-        async fn happye2e_burn(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn happye2e_burn(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -1876,13 +1839,10 @@ pub mod ilockmvp {
         ///     CallerNotOwner          - When caller does not own contract
         ///     InsufficientBalance     - When donor's balance < burn amount
         #[ink_e2e::test]
-        async fn sade2e_burn(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_burn(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
-       
+
         /// HAPPY DISTRIBUTE_TOKENS
         /// - Test if token distribution works as intended per vesting schedule.
         /// - Cycle through entire vesting period.
@@ -1890,43 +1850,41 @@ pub mod ilockmvp {
         /// - Includes register_stakeholder().
         /// - Includes distribute_tokens().
         #[ink_e2e::test]
-        async fn happye2e_distribute_tokens(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-/*
-            // fire up contract
-            let constructor = ILOCKmvpRef::new_token();
-            let contract_acct_id = client
-                .instantiate("ilockmvp", &ink_e2e::alice(), constructor, 0, None)
-                .await
-                .expect("instantiate failed")
-                .account_id;
+        async fn happye2e_distribute_tokens(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
+            /*
+                        // fire up contract
+                        let constructor = ILOCKmvpRef::new_token();
+                        let contract_acct_id = client
+                            .instantiate("ilockmvp", &ink_e2e::alice(), constructor, 0, None)
+                            .await
+                            .expect("instantiate failed")
+                            .account_id;
 
-            // register generic stakeholder
-            let stakeholder_account = ink_e2e::account_id(ink_e2e::AccountKeyring::Bob);
-            let stakeholder_share = 1_000_000_000;
+                        // register generic stakeholder
+                        let stakeholder_account = ink_e2e::account_id(ink_e2e::AccountKeyring::Bob);
+                        let stakeholder_share = 1_000_000_000;
 
-            // prepare messages
-            let distribute_tokens_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
-                .call(|contract| contract.distribute_tokens(stakeholder_account.clone()));
+                        // prepare messages
+                        let distribute_tokens_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
+                            .call(|contract| contract.distribute_tokens(stakeholder_account.clone()));
 
-            // iterate through one vesting schedule
-            for month in 0..(POOLS[0].vests + POOLS[0].cliffs + 1) {
+                        // iterate through one vesting schedule
+                        for month in 0..(POOLS[0].vests + POOLS[0].cliffs + 1) {
 
-                let mut balance_of_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
-                    .call(|contract| contract.balance_of(stakeholder_account.clone()));
-                let mut stakeholder_data_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
-                    .call(|contract| contract.stakeholder_data(stakeholder_account.clone()));
-                let distribute_tokens_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
-                    .call(|contract| contract.distribute_tokens(stakeholder_account.clone()));
-                let mut increment_month_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
-                    .call(|contract| contract.TESTING_increment_month());
-                let mut months_passed_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
-                    .call(|contract| contract.months_passed());
+                            let mut balance_of_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
+                                .call(|contract| contract.balance_of(stakeholder_account.clone()));
+                            let mut stakeholder_data_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
+                                .call(|contract| contract.stakeholder_data(stakeholder_account.clone()));
+                            let distribute_tokens_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
+                                .call(|contract| contract.distribute_tokens(stakeholder_account.clone()));
+                            let mut increment_month_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
+                                .call(|contract| contract.TESTING_increment_month());
+                            let mut months_passed_msg = build_message::<ILOCKmvpRef>(contract_acct_id.clone())
+                                .call(|contract| contract.months_passed());
 
-                println!("{}", month);
-            }
-*/            
+                            println!("{}", month);
+                        }
+            */
             Ok(())
         }
 
@@ -1940,10 +1898,7 @@ pub mod ilockmvp {
         ///     StakeholderSharePaid         - when stakeholder has already been paid entire share
         ///     PayoutTooEarly               - when next month's payment isn't ready
         #[ink_e2e::test]
-        async fn sade2e_distribute_tokens(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_distribute_tokens(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -1952,10 +1907,7 @@ pub mod ilockmvp {
         /// - Checks PARTNERS, WHITELIST, and PUBLIC_SALE pools.
         /// - Checks resulting balances for three pools and recipients.
         #[ink_e2e::test]
-        async fn happye2e_payout_tokens(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn happye2e_payout_tokens(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -1967,10 +1919,7 @@ pub mod ilockmvp {
         ///     InvalidPool                  - when pool isn't (PARTNERS|WHITELIST|PUBLIC_SALE)
         ///     PaymentTooLarge              - when specified payment amount is more than pool
         #[ink_e2e::test]
-        async fn sade2e_payout_tokens(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_payout_tokens(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -1984,10 +1933,7 @@ pub mod ilockmvp {
         /// - Test that rewarded_total() works.
         /// - Test that rewarded_interlocker_total() works.
         #[ink_e2e::test]
-        async fn happye2e_reward_interlocker(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn happye2e_reward_interlocker(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
@@ -2000,49 +1946,37 @@ pub mod ilockmvp {
         ///
         ///     ... maybe check the over/underflows?
         #[ink_e2e::test]
-        async fn sade2e_reward_interlocker(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_reward_interlocker(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
         /// HAPPY WITHDRAW_PROCEEDS
         /// - Test if proceeds withdraw functionality works correctly.
         #[ink_e2e::test]
-        async fn happye2e_withdraw_proceeds(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn happye2e_withdraw_proceeds(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
 
         /// SAD WITHDRAW_PROCEEDS
         /// - Test if proceeds withdraw function fails correctly.
-        /// 
+        ///
         /// - Return
         ///     CallerNotOwner               - when caller does not own contract
         ///     PaymentTooLarge              - when arithmetic over or underflows
         #[ink_e2e::test]
-        async fn sade2e_withdraw_proceeds(
-            mut client: ink_e2e::Client<C, E>,
-        ) -> E2EResult<()> {
-
+        async fn sade2e_withdraw_proceeds(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             Ok(())
         }
     }
 
-////////////////////////////////////////////////////////////////////////////
-//// unit tests ////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    //// unit tests ////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     #[cfg(test)]
     mod tests {
 
-        use ink::primitives::{
-            Clear,
-            Hash,
-        };
+        use ink::primitives::{Clear, Hash};
 
         use super::*;
 
@@ -2051,34 +1985,42 @@ pub mod ilockmvp {
         /// - and check cap().
         #[ink::test]
         fn new_token_works() {
-
             let ILOCKmvpPSP22 = ILOCKmvp::new_token();
 
-            assert_eq!(ILOCKmvpPSP22.vest.monthspassed, ILOCKmvpPSP22.months_passed());
-            assert_eq!(ILOCKmvpPSP22.vest.nextpayout, ILOCKmvpPSP22.env().block_timestamp() + ONE_MONTH);
+            assert_eq!(
+                ILOCKmvpPSP22.vest.monthspassed,
+                ILOCKmvpPSP22.months_passed()
+            );
+            assert_eq!(
+                ILOCKmvpPSP22.vest.nextpayout,
+                ILOCKmvpPSP22.env().block_timestamp() + ONE_MONTH
+            );
             assert_eq!(ILOCKmvpPSP22.total_supply(), 0);
-            assert_eq!(ILOCKmvpPSP22.metadata.name, Some("Interlock Network".as_bytes().to_vec()));
-            assert_eq!(ILOCKmvpPSP22.metadata.symbol, Some("ILOCK".as_bytes().to_vec()));
+            assert_eq!(
+                ILOCKmvpPSP22.metadata.name,
+                Some("Interlock Network".as_bytes().to_vec())
+            );
+            assert_eq!(
+                ILOCKmvpPSP22.metadata.symbol,
+                Some("ILOCK".as_bytes().to_vec())
+            );
             assert_eq!(ILOCKmvpPSP22.metadata.decimals, 18);
 
             // this checks that token numbers have been entered accurately into POOLS PoolData
             let mut total_tokens: u128 = 0;
             for pool in 0..POOL_COUNT {
-
                 total_tokens += POOLS[pool].tokens * DECIMALS_POWER10;
             }
             assert_eq!(total_tokens, ILOCKmvpPSP22.cap());
             assert_eq!(ILOCKmvpPSP22.ownable.owner, ILOCKmvpPSP22.env().caller());
         }
-      
+
         /// HAPPY CHECK_TIME
         /// - Test if check_time function functions correctly.
-        /// - If block timestamp is > than next month's payout date, then 
+        /// - If block timestamp is > than next month's payout date, then
         ///   function increments months_passed by one.
         #[ink::test]
-        fn happyunit_check_time() {
-
-        }    
+        fn happyunit_check_time() {}
 
         /// SAD CHECK_TIME
         /// - Test if check_time function fails correctly.
@@ -2086,59 +2028,51 @@ pub mod ilockmvp {
         /// - Return
         ///     PayoutTooEarly            - when block timestamp < nextpayout time
         #[ink::test]
-        fn sadunit_check_time() {
-
-        }    
+        fn sadunit_check_time() {}
 
         /// HAPPY REMAINING_TIME
         /// - Test if remaingint_time function works correctly.
         /// - If timestamp < nextpayout, return difference.
         /// - If difference underflows, then time is up and ready for next payout.
         #[ink::test]
-        fn happyunit_remaining_time() {
-
-        }    
+        fn happyunit_remaining_time() {}
 
         /// HAPPY REGISTER_STAKEHOLDER & STAKEHOLDER_DATA
         /// - Test if register_stakeholder and stakeholder_data functions works correctly.
         /// - Registration should succeed as long as stakeholder share > 0.
         /// - Payremaining should accurately reflect distribution to stakeholder given share.
         #[ink::test]
-        fn happyunit_register_stakeholder_data() {
-
-        }    
+        fn happyunit_register_stakeholder_data() {}
 
         /// HAPPY POOL_DATA AND POOL_BALANCE
         /// - Test if pool_data getter does its job.
         /// - Test if pool_balance does its job.
         #[ink::test]
         fn happyunit_pool_data_and_balance() {
-
             let ILOCKmvpPSP22 = ILOCKmvp::new_token();
             let pool = &POOLS[1];
-            assert_eq!(ILOCKmvpPSP22.pool_data(1), (
-                format!("pool: {:?} ", pool.name.to_string()),
-                format!("tokens alotted: {:?} ", pool.tokens),
-                format!("number of vests: {:?} ", pool.vests),
-                format!("vesting cliff: {:?} ", pool.cliffs),
-            ));
+            assert_eq!(
+                ILOCKmvpPSP22.pool_data(1),
+                (
+                    format!("pool: {:?} ", pool.name.to_string()),
+                    format!("tokens alotted: {:?} ", pool.tokens),
+                    format!("number of vests: {:?} ", pool.vests),
+                    format!("vesting cliff: {:?} ", pool.cliffs),
+                )
+            );
         }
 
         /// HAPPY/SAD UPDATE CONTRACT
         /// - test if update_contract functions/fails correctly.
-        /// 
+        ///
         /// - I am not sure how to do this or if it's even possible.
         #[ink::test]
-        fn happyunit_update_contract() {
-
-        }
+        fn happyunit_update_contract() {}
 
         /// HAPPY CREATE_GET_PORT
         /// - Test if create_port() and port() functions correctly.
         #[ink::test]
-        fn happyunit_create_get_port() {
-
-        }
+        fn happyunit_create_get_port() {}
 
         /// HAPPY TAX_PORT_TRANSFER
         /// - Test if the socket tax on transfer functions correctly.
@@ -2148,21 +2082,16 @@ pub mod ilockmvp {
         /// - Tax amount is taken out of circulation.
         /// - Return is correct adjusted post-tax amount.
         #[ink::test]
-        fn happyunit_tax_port_transfer() {
-
-        }
+        fn happyunit_tax_port_transfer() {}
 
         /// SAD TAX_PORT_TRANSFER
         /// - Not sure there is much to do here.
         #[ink::test]
-        fn sadunit_tax_port_transfer() {
+        fn sadunit_tax_port_transfer() {}
 
-        }
-
-
-////////////////////////////////////////////////////////////////////////////
-//// test events emit properly in general //////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
+        //// test events emit properly in general //////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////
 
         ///
         /// - Test events emit in general.
@@ -2178,7 +2107,6 @@ pub mod ilockmvp {
         /// - Capturing complete events within the e2e tests is an active issue, #225
         #[ink::test]
         fn test_events_work() {
-
             let ILOCKmvpPSP22 = ILOCKmvp::new_token();
             let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
 
@@ -2209,7 +2137,6 @@ pub mod ilockmvp {
                 1000,
             );
         }
-
 
         ///
         /// Serves in test for the three emitted events.
@@ -2260,7 +2187,6 @@ pub mod ilockmvp {
 
             let mut expected_topics = Vec::new();
             match kind {
-
                 "Transfer" => {
                     if let Event::Transfer(Transfer { from, to, amount }) = decoded_event {
                         assert_eq!(from, expected_A, "encountered invalid Transfer.from");
@@ -2288,10 +2214,15 @@ pub mod ilockmvp {
                     } else {
                         panic!("expected valid Transfer event");
                     }
-                },
+                }
 
                 "Approval" => {
-                    if let Event::Approval(Approval { owner, spender, amount }) = decoded_event {
+                    if let Event::Approval(Approval {
+                        owner,
+                        spender,
+                        amount,
+                    }) = decoded_event
+                    {
                         assert_eq!(owner, expected_A, "encountered invalid Approval.owner");
                         assert_eq!(spender, expected_B, "encountered invalid Approval.spender");
                         assert_eq!(amount, expected_C, "encountered invalid Approval.amount");
@@ -2317,7 +2248,7 @@ pub mod ilockmvp {
                     } else {
                         panic!("expected valid Approval event");
                     }
-                },
+                }
 
                 "Reward" => {
                     if let Event::Reward(Reward { to, amount }) = decoded_event {
@@ -2341,7 +2272,7 @@ pub mod ilockmvp {
                     } else {
                         panic!("expected valid Reward event");
                     }
-                },
+                }
                 &_ => (),
             };
 
@@ -2370,11 +2301,7 @@ pub mod ilockmvp {
             T: scale::Encode,
         {
             use ink::{
-                env::hash::{
-                    Blake2x256,
-                    CryptoHash,
-                    HashOutput,
-                },
+                env::hash::{Blake2x256, CryptoHash, HashOutput},
                 primitives::Clear,
             };
 
@@ -2384,10 +2311,9 @@ pub mod ilockmvp {
             let len_encoded = encoded.len();
             if len_encoded <= len_result {
                 result.as_mut()[..len_encoded].copy_from_slice(&encoded);
-                return result
+                return result;
             }
-            let mut hash_output =
-                <<Blake2x256 as HashOutput>::Type as Default>::default();
+            let mut hash_output = <<Blake2x256 as HashOutput>::Type as Default>::default();
             <Blake2x256 as CryptoHash>::hash(&encoded, &mut hash_output);
             let copy_len = core::cmp::min(hash_output.len(), len_result);
             result.as_mut()[0..copy_len].copy_from_slice(&hash_output[0..copy_len]);
@@ -2395,4 +2321,3 @@ pub mod ilockmvp {
         }
     }
 }
-
